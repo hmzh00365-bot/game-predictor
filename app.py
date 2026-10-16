@@ -1,18 +1,46 @@
 import streamlit as st
 import numpy as np
 import json
+import os
 from collections import defaultdict, Counter
 
 st.set_page_config(page_title="مساعد توقع الجولات الذكي", layout="centered")
 
-st.title("⚽ نظام توقع الجولات (مع حفظ واستعادة الذاكرة)")
-st.write("النظام المطور: يحفظ سجلك بالكامل ويتعلم من أخطائه مع إمكانية تصدير واستيراد الذاكرة!")
+st.title("⚽ نظام توقع الجولات (حفظ تلقائي للملفات)")
+st.write("النظام المطور: يحفظ السجل والذاكرة تلقائياً في ملف نصي داخلي ليعود مستمراً دائماً.")
 
-# تهيئة الذاكرة
-if 'history' not in st.session_state:
-    st.session_state.history = []
-if 'error_corrections' not in st.session_state:
-    st.session_state.error_corrections = defaultdict(float)
+MEMORY_FILE = "history_memory.txt"
+
+# دالة لقراءة الذاكرة تلقائياً من الملف النصي الداخلي
+def load_memory_from_file():
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                history = data.get("history", [])
+                error_corrections = defaultdict(float, data.get("error_corrections", {}))
+                return history, error_corrections
+        except Exception:
+            pass
+    return [], defaultdict(float)
+
+# دالة لحفظ الذاكرة تلقائياً في الملف النصي الداخلي
+def save_memory_to_file(history, error_corrections):
+    try:
+        data = {
+            "history": history,
+            "error_corrections": dict(error_corrections)
+        }
+        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception:
+        pass
+
+# تهيئة الذاكرة عند بدء التشغيل وسحبها من الملف تلقائياً
+if 'history' not in st.session_state or 'error_corrections' not in st.session_state:
+    loaded_history, loaded_corrections = load_memory_from_file()
+    st.session_state.history = loaded_history
+    st.session_state.error_corrections = loaded_corrections
 
 teams_list = [
     "غلطة سراي", 
@@ -82,33 +110,6 @@ def predict_next_team(history, error_corrections):
 
 current_predictions = predict_next_team(st.session_state.history, st.session_state.error_corrections)
 
-# قسم حفظ واستعادة السجل والذاكرة
-st.sidebar.header("💾 إدارة الذاكرة والسجل")
-if st.session_state.history:
-    # تجهيز ملف JSON للتحميل
-    save_data = {
-        "history": st.session_state.history,
-        "error_corrections": dict(st.session_state.error_corrections)
-    }
-    json_str = json.dumps(save_data, ensure_ascii=False, indent=4)
-    st.sidebar.download_button(
-        label="📥 تحميل السجل الحالي (حفظ)",
-        data=json_str,
-        file_name="game_predictor_memory.json",
-        mime="application/json"
-    )
-
-uploaded_file = st.sidebar.file_uploader("📤 استرجاع سجل سابق (رفع ملف الذاكرة)", type=["json"])
-if uploaded_file is not None:
-    try:
-        loaded_data = json.load(uploaded_file)
-        st.session_state.history = loaded_data.get("history", [])
-        st.session_state.error_corrections = defaultdict(float, loaded_data.get("error_corrections", {}))
-        st.sidebar.success("تم استرجاع السجل والذاكرة بنجاح!")
-        st.rerun()
-    except Exception as e:
-        st.sidebar.error("خطأ في قراءة الملف.")
-
 st.subheader("تسجيل نتيجة الجولة المنتهية (الواقعية):")
 cols = st.columns(2)
 
@@ -122,24 +123,11 @@ for i, team in enumerate(teams_list):
                     st.info(f"⚠️ تعلم متقدم: توقع النظام ({top_predicted_team}) والنتيجة كانت ({team}).")
             
             st.session_state.history.append(team)
+            # حفظ تلقائي فوري في الملف النصي الداخلي عند كل إدخال
+            save_memory_to_file(st.session_state.history, st.session_state.error_corrections)
             st.rerun()
 
 if st.button("🗑️ مسح السجل وإعادة ضبط الذاكرة", use_container_width=True):
     st.session_state.history = []
     st.session_state.error_corrections = defaultdict(float)
-    st.rerun()
-
-st.divider()
-
-st.subheader(f"📊 سجل الجولات ({len(st.session_state.history)} جولة):")
-if st.session_state.history:
-    st.text(" -> ".join(st.session_state.history[-15:]))
-else:
-    st.info("لم يتم تسجيل أي جولات بعد.")
-
-st.subheader("🎯 توقعات الجولة القادمة:")
-if len(st.session_state.history) >= 1:
-    for team, prob in current_predictions:
-        st.metric(label=team, value=f"{prob:.1f}%")
-else:
-    st.warning("أدخل جولة واحدة على الأقل لبدء تحليل التوقعات.")
+    # مس
