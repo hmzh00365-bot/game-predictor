@@ -11,7 +11,6 @@ st.write("النظام المطور: يحفظ السجل والذاكرة تلق
 
 MEMORY_FILE = "history_memory.txt"
 
-# دالة لقراءة الذاكرة تلقائياً من الملف النصي الداخلي
 def load_memory_from_file():
     if os.path.exists(MEMORY_FILE):
         try:
@@ -24,7 +23,6 @@ def load_memory_from_file():
             pass
     return [], defaultdict(float)
 
-# دالة لحفظ الذاكرة تلقائياً في الملف النصي الداخلي
 def save_memory_to_file(history, error_corrections):
     try:
         data = {
@@ -36,7 +34,6 @@ def save_memory_to_file(history, error_corrections):
     except Exception:
         pass
 
-# تهيئة الذاكرة عند بدء التشغيل وسحبها من الملف تلقائياً
 if 'history' not in st.session_state or 'error_corrections' not in st.session_state:
     loaded_history, loaded_corrections = load_memory_from_file()
     st.session_state.history = loaded_history
@@ -111,23 +108,38 @@ def predict_next_team(history, error_corrections):
 current_predictions = predict_next_team(st.session_state.history, st.session_state.error_corrections)
 
 st.subheader("تسجيل نتيجة الجولة المنتهية (الواقعية):")
-cols = st.columns(2)
 
+# عرض الأزرار بشكل متسلسل ومباشر لضمان الاستجابة السريعة على الهواتف
 for i, team in enumerate(teams_list):
-    with cols[i % 2]:
-        if st.button(f"فاز: {team}", key=f"btn_{i}", use_container_width=True):
-            if current_predictions:
-                top_predicted_team = current_predictions[0][0]
-                if top_predicted_team != team:
-                    st.session_state.error_corrections[team] += 2.0
-                    st.info(f"⚠️ تعلم متقدم: توقع النظام ({top_predicted_team}) والنتيجة كانت ({team}).")
-            
-            st.session_state.history.append(team)
-            # حفظ تلقائي فوري في الملف النصي الداخلي عند كل إدخال
-            save_memory_to_file(st.session_state.history, st.session_state.error_corrections)
-            st.rerun()
+    if st.button(f"فاز: {team}", key=f"team_btn_{i}", use_container_width=True):
+        if current_predictions:
+            top_predicted_team = current_predictions[0][0]
+            if top_predicted_team != team:
+                st.session_state.error_corrections[team] += 2.0
+                st.info(f"⚠️ تعلم متقدم: توقع النظام ({top_predicted_team}) والنتيجة كانت ({team}).")
+        
+        st.session_state.history.append(team)
+        save_memory_to_file(st.session_state.history, st.session_state.error_corrections)
+        st.rerun()
 
-if st.button("🗑️ مسح السجل وإعادة ضبط الذاكرة", use_container_width=True):
+if st.button("🗑️ مسح السجل وإعادة ضبط الذاكرة", key="reset_btn", use_container_width=True):
     st.session_state.history = []
     st.session_state.error_corrections = defaultdict(float)
-    # مس
+    if os.path.exists(MEMORY_FILE):
+        os.remove(MEMORY_FILE)
+    st.rerun()
+
+st.divider()
+
+st.subheader(f"📊 سجل الجولات ({len(st.session_state.history)} جولة محفوظة تلقائياً):")
+if st.session_state.history:
+    st.text(" -> ".join(st.session_state.history[-15:]))
+else:
+    st.info("لم يتم تسجيل أي جولات بعد.")
+
+st.subheader("🎯 توقعات الجولة القادمة:")
+if len(st.session_state.history) >= 1:
+    for team, prob in current_predictions:
+        st.metric(label=team, value=f"{prob:.1f}%")
+else:
+    st.warning("أدخل جولة واحدة على الأقل لبدء تحليل التوقعات.")
