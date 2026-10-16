@@ -90,8 +90,8 @@ for i, team in enumerate(teams_list):
                 if top_predicted_team != team:
                     # زيادة وزن الفريق الحقيقي الذي فاجأ النظام لكي يتعلم منه
                     st.session_state.error_corrections[team] += 1.5
-                    st.info(⚠️ النظام تعلم من خطأه: توقع سابقاً {top_predicted_team} وفاز {team}. تم تعديل الوزن التصحيحي.)
-            
+                    st.info(f"⚠️ النظام تعلم من خطأه: توقع سابقاً {top_predicted_team} وفاز {team}. تم تعديل الوزن التصحيحي.")
+
             st.session_state.history.append(team)
             st.rerun()
 
