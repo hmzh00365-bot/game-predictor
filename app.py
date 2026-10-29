@@ -2,14 +2,16 @@ import streamlit as st
 import numpy as np
 import json
 import os
+from datetime import datetime
 from collections import defaultdict, Counter
+from PIL import Image
 
-st.set_page_config(page_title="مساعد توقع الجولات الذكي", layout="centered")
+st.set_page_config(page_title="مساعد توقع الجولات الذكي (Vision & Time AI)", layout="centered")
 
-st.title("⚽ نظام توقع الجولات (حفظ تلقائي للملفات)")
-st.write("النظام المطور: يحفظ السجل والذاكرة تلقائياً في ملف نصي داخلي ليعود مستمراً دائماً.")
+st.title("⏱️👁️‍🗨️ نظام توقع الجولات (الزمن، الرؤية، والتعلم الذكي)")
+st.write("النسخة المتقدمة: تحليل الأنماط بناءً على وقت الجولة، رهانات المراهنين، وسلاسل ماركوف.")
 
-MEMORY_FILE = "history_memory.txt"
+MEMORY_FILE = "history_memory_time.txt"
 
 def load_memory_from_file():
     if os.path.exists(MEMORY_FILE):
@@ -17,16 +19,18 @@ def load_memory_from_file():
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 history = data.get("history", [])
+                time_logs = data.get("time_logs", [])
                 error_corrections = defaultdict(float, data.get("error_corrections", {}))
-                return history, error_corrections
+                return history, time_logs, error_corrections
         except Exception:
             pass
-    return [], defaultdict(float)
+    return [], [], defaultdict(float)
 
-def save_memory_to_file(history, error_corrections):
+def save_memory_to_file(history, time_logs, error_corrections):
     try:
         data = {
             "history": history,
+            "time_logs": time_logs,
             "error_corrections": dict(error_corrections)
         }
         with open(MEMORY_FILE, "w", encoding="utf-8") as f:
@@ -34,10 +38,11 @@ def save_memory_to_file(history, error_corrections):
     except Exception:
         pass
 
-if 'history' not in st.session_state or 'error_corrections' not in st.session_state:
-    loaded_history, loaded_corrections = load_memory_from_file()
-    st.session_state.history = loaded_history
-    st.session_state.error_corrections = loaded_corrections
+if 'history' not in st.session_state or 'time_logs' not in st.session_state or 'error_corrections' not in st.session_state:
+    h, t, c = load_memory_from_file()
+    st.session_state.history = h
+    st.session_state.time_logs = t
+    st.session_state.error_corrections = c
 
 teams_list = [
     "غلطة سراي", 
@@ -50,37 +55,55 @@ teams_list = [
     "فنربخشة"
 ]
 
-def predict_next_team(history, error_corrections):
+def predict_next_team(history, time_logs, error_corrections, crowd_boosts=None):
     all_teams = teams_list.copy()
     for t in history:
         if t not in all_teams:
             all_teams.append(t)
             
-    if not history:
+    if not history and not crowd_boosts:
         base_prob = 100.0 / len(all_teams)
         return [(team, base_prob) for team in all_teams]
         
-    total_rounds = len(history)
+    total_rounds = len(history) if history else 1
     scores = {team: 1.0 for team in all_teams}
     
+    # 1. الأوزان الزمنية الحالية (رصد الساعة الحالية ومقارنتها بالسجلات السابقة في نفس الوقت)
+    current_hour = datetime.now().hour
+    if time_logs:
+        for team, log_hour in zip(history, time_logs):
+            # إذا تكرر الفوز في نفس الساعة أو نطاق تقريبي، نمنحه وزناً زمنياً إضافياً
+            if abs(current_hour - log_hour) <= 1 or abs(current_hour - log_hour) >= 23:
+                scores[team] += 1.5
+
+    # 2. الأوزان التاريخية والزمنية التقاربية
     for idx, team in enumerate(history):
         recency_weight = ((idx + 1) / total_rounds) ** 1.5 * 3.0
         scores[team] += recency_weight
 
-    last_team = history[-1]
-    transition_counts = defaultdict(Counter)
-    for i in range(len(history) - 1):
-        current_t = history[i]
-        next_t = history[i+1]
-        transition_counts[current_t][next_t] += 1
-        
-    if last_team in transition_counts:
-        total_transitions = sum(transition_counts[last_team].values())
-        if total_transitions > 0:
-            for next_t, count in transition_counts[last_team].items():
-                prob = count / total_transitions
-                scores[next_t] += prob * 6.0
+    # 3. سلاسل ماركوف
+    if len(history) >= 2:
+        last_team = history[-1]
+        transition_counts = defaultdict(Counter)
+        for i in range(len(history) - 1):
+            current_t = history[i]
+            next_t = history[i+1]
+            transition_counts[current_t][next_t] += 1
+            
+        if last_team in transition_counts:
+            total_transitions = sum(transition_counts[last_team].values())
+            if total_transitions > 0:
+                for next_t, count in transition_counts[last_team].items():
+                    prob = count / total_transitions
+                    scores[next_t] += prob * 6.0
 
+    # 4. ضغط ورهانات الجمهور من لقطة الشاشة
+    if crowd_boosts:
+        for team, boost_val in crowd_boosts.items():
+            if team in scores:
+                scores[team] += boost_val * 4.5
+
+    # 5. التبريد والغياب
     last_seen_indices = {team: -1 for team in all_teams}
     for idx, team in enumerate(history):
         last_seen_indices[team] = idx
@@ -92,6 +115,7 @@ def predict_next_team(history, error_corrections):
             absence_duration = total_rounds - 1 - last_seen_indices[team]
         scores[team] += (absence_duration * 0.35)
 
+    # 6. التصحيح العكسي للأخطاء
     for team in scores:
         if team in error_corrections:
             scores[team] += error_corrections[team] * 2.5
@@ -105,25 +129,45 @@ def predict_next_team(history, error_corrections):
     sorted_preds = sorted(percentages.items(), key=lambda x: x[1], reverse=True)
     return sorted_preds
 
-current_predictions = predict_next_team(st.session_state.history, st.session_state.error_corrections)
+# عرض الوقت الحالي
+current_time_str = datetime.now().strftime("%I:%M %p")
+st.info(f"🕒 توقيت النظام الحالي: **{current_time_str}** (يتم ربط التنبؤات بهذا التوقيت تلقائياً)")
 
+# قسم رفع لقطة الشاشة
+st.subheader("📷 تحليل لقطة شاشة العجلة الحية:")
+uploaded_screenshot = st.file_uploader("ارفع صورة العجلة الحالية (اختياري لتحليل الرهانات):", type=["jpg", "jpeg", "png"])
+
+crowd_boosts = {}
+if uploaded_screenshot is not None:
+    image = Image.open(uploaded_screenshot)
+    st.image(image, caption="لقطة الشاشة المرفوعة للعجلة", use_container_width=True)
+    with st.expander("⚡ ضبط أوزان رهانات المراهنين الظاهرة في الصورة"):
+        for team in teams_list:
+            val = st.slider(f"قوة رهانات جمهور: {team}", 0, 5, 0, key=f"crowd_{team}")
+            if val > 0:
+                crowd_boosts[team] = val
+
+current_predictions = predict_next_team(st.session_state.history, st.session_state.time_logs, st.session_state.error_corrections, crowd_boosts)
+
+st.divider()
 st.subheader("تسجيل نتيجة الجولة المنتهية (الواقعية):")
 
-# عرض الأزرار بشكل متسلسل ومباشر لضمان الاستجابة السريعة على الهواتف
 for i, team in enumerate(teams_list):
     if st.button(f"فاز: {team}", key=f"team_btn_{i}", use_container_width=True):
         if current_predictions:
             top_predicted_team = current_predictions[0][0]
             if top_predicted_team != team:
                 st.session_state.error_corrections[team] += 2.0
-                st.info(f"⚠️ تعلم متقدم: توقع النظام ({top_predicted_team}) والنتيجة كانت ({team}).")
+                st.warning(f"⚠️ تعلم متقدم: توقع النظام ({top_predicted_team}) وفاز ({team}). تم تحديث الأوزان.")
         
         st.session_state.history.append(team)
-        save_memory_to_file(st.session_state.history, st.session_state.error_corrections)
+        st.session_state.time_logs.append(datetime.now().hour) # تسجيل ساعة الفوز بدقة
+        save_memory_to_file(st.session_state.history, st.session_state.time_logs, st.session_state.error_corrections)
         st.rerun()
 
-if st.button("🗑️ مسح السجل وإعادة ضبط الذاكرة", key="reset_btn", use_container_width=True):
+if st.button("🗑️ مسح السجل وإعادة ضبط الذاكرة والوقت", key="reset_btn", use_container_width=True):
     st.session_state.history = []
+    st.session_state.time_logs = []
     st.session_state.error_corrections = defaultdict(float)
     if os.path.exists(MEMORY_FILE):
         os.remove(MEMORY_FILE)
@@ -131,15 +175,15 @@ if st.button("🗑️ مسح السجل وإعادة ضبط الذاكرة", key
 
 st.divider()
 
-st.subheader(f"📊 سجل الجولات ({len(st.session_state.history)} جولة محفوظة تلقائياً):")
+st.subheader(f"📊 سجل الجولات ({len(st.session_state.history)} جولة مسجلة زمنياً):")
 if st.session_state.history:
     st.text(" -> ".join(st.session_state.history[-15:]))
 else:
     st.info("لم يتم تسجيل أي جولات بعد.")
 
-st.subheader("🎯 توقعات الجولة القادمة:")
-if len(st.session_state.history) >= 1:
+st.subheader("🎯 توقعات الجولة القادمة (بالزمن، الرؤية، والذكاء التكيفي):")
+if len(st.session_state.history) >= 1 or crowd_boosts:
     for team, prob in current_predictions:
         st.metric(label=team, value=f"{prob:.1f}%")
 else:
-    st.warning("أدخل جولة واحدة على الأقل لبدء تحليل التوقعات.")
+    st.warning("أدخل جولة واحدة على الأقل أو ارفع لقطة الشاشة لبدء التحليل.")
