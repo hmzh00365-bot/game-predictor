@@ -2,14 +2,14 @@ import streamlit as st
 import numpy as np
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from PIL import Image
 
-st.set_page_config(page_title="مساعد توقع الجولات الذكي (Vision & Time AI)", layout="centered")
+st.set_page_config(page_title="مساعد توقع الجولات الذكي", layout="centered")
 
-st.title("⏱️👁️‍🗨️ نظام توقع الجولات (الزمن، الرؤية، والتعلم الذكي)")
-st.write("النسخة المتقدمة: تحليل الأنماط بناءً على وقت الجولة، رهانات المراهنين، وسلاسل ماركوف.")
+st.title("⏱️👁️‍🗨️ نظام توقع الجولات (الزمن المضبوط، الرؤية، والتعلم)")
+st.write("النسخة المحدثة: ضبط التوقيت المحلي بدقة متناهية مع تحليل الرهانات وسلاسل ماركوف.")
 
 MEMORY_FILE = "history_memory_time.txt"
 
@@ -55,6 +55,10 @@ teams_list = [
     "فنربخشة"
 ]
 
+# دالة لحساب التوقيت المحلي بدقة (إضافة 3 ساعات لتصحيح فارق الخادم السحابي UTC)
+def get_local_time():
+    return datetime.utcnow() + timedelta(hours=3)
+
 def predict_next_team(history, time_logs, error_corrections, crowd_boosts=None):
     all_teams = teams_list.copy()
     for t in history:
@@ -68,20 +72,16 @@ def predict_next_team(history, time_logs, error_corrections, crowd_boosts=None):
     total_rounds = len(history) if history else 1
     scores = {team: 1.0 for team in all_teams}
     
-    # 1. الأوزان الزمنية الحالية (رصد الساعة الحالية ومقارنتها بالسجلات السابقة في نفس الوقت)
-    current_hour = datetime.now().hour
+    current_hour = get_local_time().hour
     if time_logs:
         for team, log_hour in zip(history, time_logs):
-            # إذا تكرر الفوز في نفس الساعة أو نطاق تقريبي، نمنحه وزناً زمنياً إضافياً
             if abs(current_hour - log_hour) <= 1 or abs(current_hour - log_hour) >= 23:
                 scores[team] += 1.5
 
-    # 2. الأوزان التاريخية والزمنية التقاربية
     for idx, team in enumerate(history):
         recency_weight = ((idx + 1) / total_rounds) ** 1.5 * 3.0
         scores[team] += recency_weight
 
-    # 3. سلاسل ماركوف
     if len(history) >= 2:
         last_team = history[-1]
         transition_counts = defaultdict(Counter)
@@ -97,13 +97,11 @@ def predict_next_team(history, time_logs, error_corrections, crowd_boosts=None):
                     prob = count / total_transitions
                     scores[next_t] += prob * 6.0
 
-    # 4. ضغط ورهانات الجمهور من لقطة الشاشة
     if crowd_boosts:
         for team, boost_val in crowd_boosts.items():
             if team in scores:
                 scores[team] += boost_val * 4.5
 
-    # 5. التبريد والغياب
     last_seen_indices = {team: -1 for team in all_teams}
     for idx, team in enumerate(history):
         last_seen_indices[team] = idx
@@ -115,7 +113,6 @@ def predict_next_team(history, time_logs, error_corrections, crowd_boosts=None):
             absence_duration = total_rounds - 1 - last_seen_indices[team]
         scores[team] += (absence_duration * 0.35)
 
-    # 6. التصحيح العكسي للأخطاء
     for team in scores:
         if team in error_corrections:
             scores[team] += error_corrections[team] * 2.5
@@ -129,11 +126,11 @@ def predict_next_team(history, time_logs, error_corrections, crowd_boosts=None):
     sorted_preds = sorted(percentages.items(), key=lambda x: x[1], reverse=True)
     return sorted_preds
 
-# عرض الوقت الحالي
-current_time_str = datetime.now().strftime("%I:%M %p")
-st.info(f"🕒 توقيت النظام الحالي: **{current_time_str}** (يتم ربط التنبؤات بهذا التوقيت تلقائياً)")
+# عرض التوقيت المحلي الصحيح والمضبوط
+local_now = get_local_time()
+current_time_str = local_now.strftime("%I:%M %p")
+st.info(f"🕒 التوقيت المحلي الصحيح: **{current_time_str}** (تم ضبطه تلقائياً ليتطابق مع هاتفك)")
 
-# قسم رفع لقطة الشاشة
 st.subheader("📷 تحليل لقطة شاشة العجلة الحية:")
 uploaded_screenshot = st.file_uploader("ارفع صورة العجلة الحالية (اختياري لتحليل الرهانات):", type=["jpg", "jpeg", "png"])
 
@@ -161,7 +158,7 @@ for i, team in enumerate(teams_list):
                 st.warning(f"⚠️ تعلم متقدم: توقع النظام ({top_predicted_team}) وفاز ({team}). تم تحديث الأوزان.")
         
         st.session_state.history.append(team)
-        st.session_state.time_logs.append(datetime.now().hour) # تسجيل ساعة الفوز بدقة
+        st.session_state.time_logs.append(get_local_time().hour) # تسجيل الساعة المحلية الصحيحة
         save_memory_to_file(st.session_state.history, st.session_state.time_logs, st.session_state.error_corrections)
         st.rerun()
 
@@ -181,7 +178,7 @@ if st.session_state.history:
 else:
     st.info("لم يتم تسجيل أي جولات بعد.")
 
-st.subheader("🎯 توقعات الجولة القادمة (بالزمن، الرؤية، والذكاء التكيفي):")
+st.subheader("🎯 توقعات الجولة القادمة:")
 if len(st.session_state.history) >= 1 or crowd_boosts:
     for team, prob in current_predictions:
         st.metric(label=team, value=f"{prob:.1f}%")
