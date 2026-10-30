@@ -79,13 +79,4 @@ def predict_next_team(history, time_logs, error_corrections):
                 scores[team] += 1.5
 
     for idx, team in enumerate(history):
-        recency_weight = ((idx + 1) / total_rounds) ** 1.5 * 3.0
-        scores[team] += recency_weight
-
-    if len(history) >= 2:
-        last_team = history[-1]
-        transition_counts = defaultdict(Counter)
-        for i in range(len(history) - 1):
-            current_t = history[i]
-            next_t = history[i+1]
-            transition_counts[current_t][next_t] +=
+        recency_weight = ((
