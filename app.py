@@ -179,4 +179,13 @@ if st.button("🗑️ مسح السجل والذاكرة بالكامل", key="r
 
 st.subheader(f"📊 سجل الجولات ({len(st.session_state.history)} جولة):")
 if st.session_state.history:
-    st.text(" ->
+    st.text(" -> ".join(st.session_state.history[-15:]))
+else:
+    st.info("لم يتم تسجيل أي جولات بعد.")
+
+st.subheader("🎯 التوقع الذكي للجولة القادمة:")
+if len(st.session_state.history) >= 1:
+    for team, prob in current_predictions:
+        st.metric(label=team, value=f"{prob:.1f}%")
+else:
+    st.warning("ارفع الصورة وحدد الفائز لبدء العرض التوقعي الفوري.")
