@@ -5,13 +5,14 @@ import os
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from PIL import Image
+import io
 
 st.set_page_config(page_title="مساعد توقع الجولات الذكي", layout="centered")
 
-st.title("⚡📉 نظام التوقع السريع (بضغط الصور لتوفير الإنترنت)")
-st.write("النسخة المجهزة: ضغط الصور تلقائياً فور رفعها لتوفير استهلاك باقة الإنترنت وسرعة فائقة.")
+st.title("⚡ نظام التوقع السريع (تصحيح النتائج والرفع الخفيف)")
+st.write("النسخة المحدثة: ضغط الصورة فوراً واختيار الفريق الفائز من القائمة بلمح البصر لتفادي الأخطاء.")
 
-MEMORY_FILE = "history_memory_compressed.txt"
+MEMORY_FILE = "history_memory_v5.txt"
 
 def load_memory_from_file():
     if os.path.exists(MEMORY_FILE):
@@ -122,41 +123,58 @@ def predict_next_team(history, time_logs, error_corrections):
 
 # عرض التوقيت المحلي
 local_now = get_local_time()
-st.info(f"🕒 التوقيت المحلي: **{local_now.strftime('%I:%M %p')}** | الصور تضغط تلقائياً لتوفير باقة الإنترنت:")
+st.info(f"🕒 التوقيت المحلي: **{local_now.strftime('%I:%M %p')}** | الصور تضغط تلقائياً لتوفر باقة الإنترنت:")
 
-if 'last_uploaded_image' not in st.session_state:
-    st.session_state.last_uploaded_image = None
+if 'last_processed_img' not in st.session_state:
+    st.session_state.last_processed_img = None
 
-# أداة رفع الصورة مع الضغط التلقائي
-uploaded_image = st.file_uploader("📥 ارفع لقطة الشاشة (مضغوطة تلقائياً):", type=["jpg", "jpeg", "png"])
+# أداة رفع الصورة مع الضغط العنيف لتوفير باقة الإنترنت والسرعة
+uploaded_image = st.file_uploader("📥 ارفع لقطة الشاشة (يتم ضغطها فوراً):", type=["jpg", "jpeg", "png"])
 
 if uploaded_image is not None:
-    # قراءة وتصغير حجم الصورة برمجياً لتقليل حجم البيانات المستهلكة
-    img = Image.open(uploaded_image)
-    img.thumbnail((600, 600))  # تقليص الأبعاد لخفض استهلاك الإنترنت وسرعة المعالجة
-    
-    # تحويل الصورة إلى بايتات للتحقق من التكرار
-    image_bytes = uploaded_image.getvalue()
-    if image_bytes != st.session_state.last_uploaded_image:
-        st.session_state.last_uploaded_image = image_bytes
+    try:
+        # فتح وضغط الصورة لتقليص الحجم من 0.9MB إلى بضع كيلوبايتات لتوفير الإنترنت والوقت
+        img = Image.open(uploaded_image)
+        img.thumbnail((400, 400)) # تقليل الأبعاد للسرعة القصوى
         
-        # اختيار تلقائي ذكي للنادي المتصدر
-        auto_detected_team = "الأهلي المصري"
+        # حفظ الصورة المصغرة في الذاكرة المؤقتة لمنع التكرار
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=60)
+        img_bytes = buf.getvalue()
         
-        st.success(f"📉 تم ضغط الصورة ومعالجتها ببيانات قليلة! وتوثيق تصدر: **{auto_detected_team}**")
-        st.session_state.history.append(auto_detected_team)
-        st.session_state.time_logs.append(get_local_time().hour)
-        save_memory_to_file(st.session_state.history, st.session_state.time_logs, st.session_state.error_corrections)
+        if img_bytes != st.session_state.last_processed_img:
+            st.session_state.last_processed_img = img_bytes
+            st.success("📉 تم ضغط الصورة ورفعها في أجزاء من الثانية! حدد الفريق الفائز أدناه بدقة:")
+    except Exception:
+        pass
+
+# اختيار الفائز الحقيقي بسرعة لتفادي أي خطأ بين الأهلي المصري والسعودي
+st.subheader("🏆 حدد الفريق الفائز في الصورة الحالية:")
+cols = st.columns(2)
+for i, team in enumerate(teams_list):
+    with cols[i % 2]:
+        if st.button(f"فاز: {team}", key=f"win_btn_{i}", use_container_width=True):
+            if st.session_state.history:
+                top_predicted_team = predict_next_team(st.session_state.history, st.session_state.time_logs, st.session_state.error_corrections)[0][0]
+                if top_predicted_team != team:
+                    st.session_state.error_corrections[team] += 2.0
+                    st.warning(f"⚠️ تعلم متقدم: توقع النظام ({top_predicted_team}) والفائز الحقيقي ({team}).")
+            
+            st.session_state.history.append(team)
+            st.session_state.time_logs.append(get_local_time().hour)
+            save_memory_to_file(st.session_state.history, st.session_state.time_logs, st.session_state.error_corrections)
+            st.success(تم تسجيل فوز {team} بنجاح!)
+            st.rerun()
 
 current_predictions = predict_next_team(st.session_state.history, st.session_state.time_logs, st.session_state.error_corrections)
 
 st.divider()
 
-if st.button("🗑️ مسح السجل والذاكرة بالكامل", key="reset_compressed", use_container_width=True):
+if st.button("🗑️ مسح السجل والذاكرة بالكامل", key="reset_v5", use_container_width=True):
     st.session_state.history = []
     st.session_state.time_logs = []
     st.session_state.error_corrections = defaultdict(float)
-    st.session_state.last_uploaded_image = None
+    st.session_state.last_processed_img = None
     if os.path.exists(MEMORY_FILE):
         os.remove(MEMORY_FILE)
     st.rerun()
@@ -172,4 +190,4 @@ if len(st.session_state.history) >= 1:
     for team, prob in current_predictions:
         st.metric(label=team, value=f"{prob:.1f}%")
 else:
-    st.warning("ارفع لقطة الشاشة لبدء العرض التوقعي الفوري.")
+    st.warning("ارفع الصورة وحدد الفائز لبدء العرض التوقعي الفوري.")
